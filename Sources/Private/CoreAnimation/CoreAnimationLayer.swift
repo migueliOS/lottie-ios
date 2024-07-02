@@ -6,14 +6,14 @@ import QuartzCore
 // MARK: - CoreAnimationLayer
 
 /// The root `CALayer` of the Core Animation rendering engine
-final class CoreAnimationLayer: BaseAnimationLayer {
+public final class CoreAnimationLayer: BaseAnimationLayer {
 
   // MARK: Lifecycle
 
   /// Initializes a `CALayer` that renders the given animation using `CAAnimation`s.
   ///  - This initializer is throwing, but will only throw when using
   ///    `CompatibilityTracker.Mode.abort`.
-  init(
+  public init(
     animation: LottieAnimation,
     imageProvider: AnimationImageProvider,
     textProvider: AnimationKeypathTextProvider,
@@ -139,7 +139,7 @@ final class CoreAnimationLayer: BaseAnimationLayer {
     setNeedsDisplay()
   }
 
-  override func layoutSublayers() {
+    public override func layoutSublayers() {
     super.layoutSublayers()
 
     // If no animation has been set up yet, display the first frame
@@ -153,7 +153,7 @@ final class CoreAnimationLayer: BaseAnimationLayer {
     }
   }
 
-  override func display() {
+    public override func display() {
     // We intentionally don't call `super.display()`, since this layer
     // doesn't directly render any content.
     //  - This fixes an issue where certain animations would unexpectedly
