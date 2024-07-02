@@ -358,7 +358,7 @@ extension CoreAnimationLayer: RootAnimationLayer {
 
   /// The current frame of the animation being displayed,
   /// accounting for the realtime progress of any active CAAnimations.
-  var currentFrame: AnimationFrameTime {
+  public var currentFrame: AnimationFrameTime {
     get {
       switch playbackState {
       case .paused(let frame):
@@ -454,7 +454,7 @@ extension CoreAnimationLayer: RootAnimationLayer {
     }
   }
 
-  func forceDisplayUpdate() {
+  public func forceDisplayUpdate() {
     // Unimplemented
     //  - We can't call `display()` here, because it would cause unexpected frame animations:
     //    https://github.com/airbnb/lottie-ios/issues/2193
