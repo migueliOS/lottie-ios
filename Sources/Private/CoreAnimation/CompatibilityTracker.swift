@@ -16,7 +16,7 @@ struct CompatibilityIssue: CustomStringConvertible {
 // MARK: - CompatibilityTracker
 
 /// A type that tracks whether or not an animation is compatible with the Core Animation engine
-final class CompatibilityTracker {
+public final class CompatibilityTracker {
 
   // MARK: Lifecycle
 
@@ -28,7 +28,7 @@ final class CompatibilityTracker {
   // MARK: Internal
 
   /// How compatibility issues should be handled
-  enum Mode {
+  public enum Mode {
     /// When a compatibility issue is encountered, an error will be thrown immediately,
     /// aborting the animation setup process as soon as possible.
     case abort
