@@ -1,12 +1,11 @@
 //
-//  File.swift
-//  
+//  AnimationContainer.swift
+//  lottie-swift
 //
-//  Created by Miguel Lorenzo on 3/7/2024.
+//  Created by Brandon Withrow on 1/24/19.
 //
 
 import Foundation
-
 import QuartzCore
 
 /**
@@ -22,101 +21,151 @@ public final class AnimationContainer: CALayer {
 
   var imageProvider: AnimationImageProvider {
     get {
-      return coreAnimationLayer.imageProvider
+      return layerImageProvider.imageProvider
     }
     set {
-      coreAnimationLayer.imageProvider = newValue
+      layerImageProvider.imageProvider = newValue
     }
   }
 
   func reloadImages() {
-    coreAnimationLayer.reloadImages()
+    layerImageProvider.reloadImages()
   }
 
   var renderScale: CGFloat = 1 {
     didSet {
-      coreAnimationLayer.renderScale = renderScale
+      animationLayers.forEach({ $0.renderScale = renderScale })
     }
   }
 
-  public var respectAnimationFrameRate: Bool {
-    get { return coreAnimationLayer.respectAnimationFrameRate }
-    set { coreAnimationLayer.respectAnimationFrameRate = newValue }
-  }
+  public var respectAnimationFrameRate: Bool = false
 
   /// Forces the view to update its drawing.
   public func forceDisplayUpdate() {
-    coreAnimationLayer.forceDisplayUpdate()
+    animationLayers.forEach({ $0.displayWithFrame(frame: currentFrame, forceUpdates: true) })
   }
 
   func logHierarchyKeypaths() {
-    coreAnimationLayer.logHierarchyKeypaths()
+    print("Lottie: Logging Animation Keypaths")
+    animationLayers.forEach({ $0.logKeypaths(for: nil, logger: .shared) })
   }
 
   func setValueProvider(_ valueProvider: AnyValueProvider, keypath: AnimationKeypath) {
-    coreAnimationLayer.setValueProvider(valueProvider, keypath: keypath)
+    for layer in animationLayers {
+      if let foundProperties = layer.nodeProperties(for: keypath) {
+        for property in foundProperties {
+          property.setProvider(provider: valueProvider)
+        }
+        layer.displayWithFrame(frame: presentation()?.currentFrame ?? currentFrame, forceUpdates: true)
+      }
+    }
   }
 
   func getValue(for keypath: AnimationKeypath, atFrame: CGFloat?) -> Any? {
-    return coreAnimationLayer.getValue(for: keypath, atFrame: atFrame)
+    for layer in animationLayers {
+      if let foundProperties = layer.nodeProperties(for: keypath),
+        let first = foundProperties.first {
+        return first.valueProvider.value(frame: atFrame ?? currentFrame)
+      }
+    }
+    return nil
   }
 
   func layer(for keypath: AnimationKeypath) -> CALayer? {
-    return coreAnimationLayer.layer(for: keypath)
+    for layer in animationLayers {
+      if let foundLayer = layer.layer(for: keypath) {
+        return foundLayer
+      }
+    }
+    return nil
   }
 
   func animatorNodes(for keypath: AnimationKeypath) -> [AnimatorNode]? {
-    return coreAnimationLayer.animatorNodes(for: keypath)
+    var results = [AnimatorNode]()
+    for layer in animationLayers {
+      if let nodes = layer.animatorNodes(for: keypath) {
+        results.append(contentsOf: nodes)
+      }
+    }
+    if results.count == 0 {
+      return nil
+    }
+    return results
   }
 
-  var textProvider: AnimationKeypathTextProvider {
-    get { return coreAnimationLayer.textProvider }
-    set { coreAnimationLayer.textProvider = newValue }
+  var textProvider: AnimationTextProvider {
+    get { return layerTextProvider.textProvider }
+    set { layerTextProvider.textProvider = newValue }
   }
 
   var fontProvider: AnimationFontProvider {
-    get { return coreAnimationLayer.fontProvider }
-    set { coreAnimationLayer.fontProvider = newValue }
+    get { return layerFontProvider.fontProvider }
+    set { layerFontProvider.fontProvider = newValue }
   }
 
-  var coreAnimationLayer: CoreAnimationLayer
+  var animationLayers: ContiguousArray<CompositionLayer>
+  fileprivate let layerImageProvider: LayerImageProvider
+  fileprivate let layerTextProvider: LayerTextProvider
+  fileprivate let layerFontProvider: LayerFontProvider
 
-  public init(animation: LottieAnimation, imageProvider: AnimationImageProvider, textProvider: AnimationKeypathTextProvider, fontProvider: AnimationFontProvider) {
-    do {
-      self.coreAnimationLayer = try CoreAnimationLayer(
-        animation: animation,
-        imageProvider: imageProvider,
-        textProvider: textProvider,
-        fontProvider: fontProvider,
-        maskAnimationToBounds: false,
-        compatibilityTrackerMode: .track,
-        logger: .shared)
-    } catch {
-      fatalError("Failed to initialize CoreAnimationLayer: \(error)")
-    }
+  public init(animation: LottieAnimation, imageProvider: AnimationImageProvider, textProvider: AnimationTextProvider, fontProvider: AnimationFontProvider) {
+    self.layerImageProvider = LayerImageProvider(imageProvider: imageProvider, assets: animation.assetLibrary?.imageAssets)
+    self.layerTextProvider = LayerTextProvider(textProvider: textProvider)
+    self.layerFontProvider = LayerFontProvider(fontProvider: fontProvider)
+    self.animationLayers = []
     super.init()
     bounds = animation.bounds
-    coreAnimationLayer.bounds = bounds
-    addSublayer(coreAnimationLayer)
+    let layers = animation.layers.initializeCompositionLayers(assetLibrary: animation.assetLibrary, layerImageProvider: layerImageProvider, textProvider: textProvider, fontProvider: fontProvider, frameRate: CGFloat(animation.framerate))
+
+    var imageLayers = [ImageCompositionLayer]()
+    var textLayers = [TextCompositionLayer]()
+
+    var mattedLayer: CompositionLayer?
+
+    for layer in layers.reversed() {
+      layer.bounds = bounds
+      animationLayers.append(layer)
+      if let imageLayer = layer as? ImageCompositionLayer {
+        imageLayers.append(imageLayer)
+      }
+      if let textLayer = layer as? TextCompositionLayer {
+        textLayers.append(textLayer)
+      }
+      if let matte = mattedLayer {
+        /// The previous layer requires this layer to be its matte
+        matte.matteLayer = layer
+        mattedLayer = nil
+        continue
+      }
+      if let matte = layer.matteType,
+        (matte == .add || matte == .invert) {
+        /// We have a layer that requires a matte.
+        mattedLayer = layer
+      }
+      addSublayer(layer)
+    }
+
+    layerImageProvider.addImageLayers(imageLayers)
+    layerImageProvider.reloadImages()
+    layerTextProvider.addTextLayers(textLayers)
+    layerTextProvider.reloadTexts()
+    layerFontProvider.addTextLayers(textLayers)
+    layerFontProvider.reloadTexts()
     setNeedsDisplay()
   }
 
   /// For CAAnimation Use
   public override init(layer: Any) {
-    if let animationLayer = layer as? AnimationContainer {
-      self.coreAnimationLayer = animationLayer.coreAnimationLayer
-    } else {
-      self.coreAnimationLayer = try! CoreAnimationLayer(
-        animation: LottieAnimation.init(dictionary: [:]),
-        imageProvider: BlankImageProvider(),
-        textProvider: DefaultTextProvider(),
-        fontProvider: DefaultFontProvider(),
-        maskAnimationToBounds: false,
-        compatibilityTrackerMode: .track,
-        logger: .shared)
-    }
+    self.animationLayers = []
+    self.layerImageProvider = LayerImageProvider(imageProvider: BlankImageProvider(), assets: nil)
+    self.layerTextProvider = LayerTextProvider(textProvider: DefaultTextProvider())
+    self.layerFontProvider = LayerFontProvider(fontProvider: DefaultFontProvider())
     super.init(layer: layer)
-    currentFrame = coreAnimationLayer.currentFrame
+
+    guard let animationLayer = layer as? AnimationContainer else { return }
+
+    currentFrame = animationLayer.currentFrame
+
   }
 
   required init?(coder aDecoder: NSCoder) {
@@ -145,16 +194,19 @@ public final class AnimationContainer: CALayer {
   public override func display() {
     guard Thread.isMainThread else { return }
     var newFrame: CGFloat
-    if let animationKeys = self.animationKeys(), !animationKeys.isEmpty {
+    if let animationKeys = self.animationKeys(),
+      !animationKeys.isEmpty {
       newFrame = self.presentation()?.currentFrame ?? self.currentFrame
     } else {
+      // We ignore the presentation's frame if there's no animation in the layer.
       newFrame = self.currentFrame
     }
     if respectAnimationFrameRate {
       newFrame = floor(newFrame)
     }
-    coreAnimationLayer.currentFrame = newFrame
+    animationLayers.forEach({ $0.displayWithFrame(frame: newFrame, forceUpdates: false) })
   }
+
 }
 
 private class BlankImageProvider: AnimationImageProvider {
